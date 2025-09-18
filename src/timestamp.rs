@@ -8,8 +8,13 @@
 //
 // SPDX-License-Identifier: EPL-2.0 OR Apache-2.0
 //
-use super::{ID, NTP64};
+#[cfg(feature = "alloc")]
 use alloc::string::String;
+
+#[cfg(feature = "no-alloc")]
+use crate::{ParseIDError, ParseNTP64Error};
+
+use super::{ID, NTP64};
 use core::{fmt, time::Duration};
 use serde::{Deserialize, Serialize};
 
@@ -92,8 +97,8 @@ impl Timestamp {
 }
 
 impl fmt::Display for Timestamp {
-    /// Formats Timestamp as the time part followed by the ID part, with `/` as separator.  
-    /// By default the time part is formatted as an unsigned integer in decimal format.  
+    /// Formats Timestamp as the time part followed by the ID part, with `/` as separator.
+    /// By default the time part is formatted as an unsigned integer in decimal format.
     /// If the alternate flag `{:#}` is used, the time part is formatted with RFC3339 representation with nanoseconds precision.
     ///
     /// # Examples
@@ -120,8 +125,8 @@ impl fmt::Debug for Timestamp {
     }
 }
 
-#[cfg(feature = "std")]
-impl FromStr for Timestamp {
+#[cfg(feature = "alloc")]
+impl core::str::FromStr for Timestamp {
     type Err = ParseTimestampError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -141,10 +146,37 @@ impl FromStr for Timestamp {
     }
 }
 
+#[cfg(feature = "alloc")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ParseTimestampError {
     pub cause: String,
+}
+
+#[cfg(feature = "no-alloc")]
+impl core::str::FromStr for Timestamp {
+    type Err = ParseTimestampError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.find('/') {
+            Some(i) => {
+                let (stime, srem) = s.split_at(i);
+                let time = NTP64::from_str(stime).map_err(ParseTimestampError::ParseNTP64Error)?;
+                let id = ID::from_str(&srem[1..]).map_err(ParseTimestampError::ParseIDError)?;
+                Ok(Timestamp::new(time, id))
+            }
+            None => Err(ParseTimestampError::NoDashFound),
+        }
+    }
+}
+
+#[cfg(feature = "no-alloc")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum ParseTimestampError {
+    ParseNTP64Error(ParseNTP64Error),
+    NoDashFound,
+    ParseIDError(ParseIDError),
 }
 
 #[cfg(test)]
@@ -202,10 +234,11 @@ mod tests {
         assert_eq!(diff, Duration::from_secs(0));
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn bijective_to_string() {
         use crate::*;
-        use std::str::FromStr;
+        use core::str::FromStr;
 
         let hlc = HLCBuilder::new().with_id(ID::rand()).build();
         for _ in 1..10000 {

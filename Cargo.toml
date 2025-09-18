@@ -25,8 +25,10 @@ authors = ["Julien Enoch <julien.enoch@adlinktech.com>"]
 edition = "2018"
 
 [features]
-default = ["std"]
-std = ["humantime", "lazy_static", "log", "serde/std", "rand/std"]
+default = ["alloc"]
+std = ["humantime", "lazy_static", "log", "serde/std", "rand/std", "alloc"]
+alloc = ["defmt/alloc", "serde/alloc", "rand/alloc"]
+no-alloc = ["dep:heapless"]
 defmt = ["dep:defmt"]                                              # Enables defmt for logging in no_std
 nix = ["dep:nix"]
 
@@ -50,6 +52,7 @@ spin = { version = "0.10", default-features = false, features = [
     "mutex",
     "spin_mutex",
 ] } # No_std alternative for std::sync::Mutex
+heapless = { version = "0.9.1", default-features = false, optional = true }
 
 [dev-dependencies]
 async-std = "1.6"
