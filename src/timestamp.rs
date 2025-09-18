@@ -1,3 +1,5 @@
+use crate::{ParseIDError, ParseNTP64Error};
+
 //
 // Copyright (c) 2017, 2020 ADLINK Technology Inc.
 //
@@ -9,11 +11,9 @@
 // SPDX-License-Identifier: EPL-2.0 OR Apache-2.0
 //
 use super::{ID, NTP64};
-use alloc::string::String;
 use core::{fmt, time::Duration};
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "std")]
 use core::str::FromStr;
 
 /// A timestamp made of a [`NTP64`] and a [`crate::HLC`]'s unique identifier.
@@ -78,22 +78,19 @@ impl Timestamp {
         match s.find('/') {
             Some(i) => {
                 let (stime, srem) = s.split_at(i);
-                let time = NTP64::parse_rfc3339(stime)
-                    .map_err(|e| ParseTimestampError { cause: e.cause })?;
-                let id =
-                    ID::from_str(&srem[1..]).map_err(|e| ParseTimestampError { cause: e.cause })?;
+                let time =
+                    NTP64::parse_rfc3339(stime).map_err(ParseTimestampError::ParseNTP64Error)?;
+                let id = ID::from_str(&srem[1..]).map_err(ParseTimestampError::ParseIDError)?;
                 Ok(Timestamp::new(time, id))
             }
-            None => Err(ParseTimestampError {
-                cause: "No '/' found in String".into(),
-            }),
+            None => Err(ParseTimestampError::NoDashFound),
         }
     }
 }
 
 impl fmt::Display for Timestamp {
-    /// Formats Timestamp as the time part followed by the ID part, with `/` as separator.  
-    /// By default the time part is formatted as an unsigned integer in decimal format.  
+    /// Formats Timestamp as the time part followed by the ID part, with `/` as separator.
+    /// By default the time part is formatted as an unsigned integer in decimal format.
     /// If the alternate flag `{:#}` is used, the time part is formatted with RFC3339 representation with nanoseconds precision.
     ///
     /// # Examples
@@ -120,7 +117,7 @@ impl fmt::Debug for Timestamp {
     }
 }
 
-#[cfg(feature = "std")]
+// #[cfg(feature = "std")]
 impl FromStr for Timestamp {
     type Err = ParseTimestampError;
 
@@ -128,23 +125,21 @@ impl FromStr for Timestamp {
         match s.find('/') {
             Some(i) => {
                 let (stime, srem) = s.split_at(i);
-                let time =
-                    NTP64::from_str(stime).map_err(|e| ParseTimestampError { cause: e.cause })?;
-                let id =
-                    ID::from_str(&srem[1..]).map_err(|e| ParseTimestampError { cause: e.cause })?;
+                let time = NTP64::from_str(stime).map_err(ParseTimestampError::ParseNTP64Error)?;
+                let id = ID::from_str(&srem[1..]).map_err(ParseTimestampError::ParseIDError)?;
                 Ok(Timestamp::new(time, id))
             }
-            None => Err(ParseTimestampError {
-                cause: "No '/' found in String".into(),
-            }),
+            None => Err(ParseTimestampError::NoDashFound),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct ParseTimestampError {
-    pub cause: String,
+pub enum ParseTimestampError {
+    ParseNTP64Error(ParseNTP64Error),
+    NoDashFound,
+    ParseIDError(ParseIDError),
 }
 
 #[cfg(test)]
@@ -202,6 +197,7 @@ mod tests {
         assert_eq!(diff, Duration::from_secs(0));
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn bijective_to_string() {
         use crate::*;

@@ -51,9 +51,29 @@
     html_root_url = "https://atolab.github.io/uhlc-rs/"
 )]
 #![cfg_attr(not(feature = "std"), no_std)]
+
+#[cfg(all(feature = "std", feature = "alloc"))]
+compile_error!("`std` and `alloc` features cannot be enabled at the same time");
+
+#[cfg(all(feature = "std", feature = "heapless"))]
+compile_error!("`std` and `heapless` features cannot be enabled at the same time");
+
+#[cfg(all(feature = "alloc", feature = "heapless"))]
+compile_error!("`alloc` and `heapless` features cannot be enabled at the same time");
+
+#[cfg(all(
+    not(feature = "std"),
+    not(feature = "alloc"),
+    not(feature = "heapless")
+))]
+compile_error!("You must enable at least one of: `std`, `alloc`, or `heapless`");
+
+#[cfg(feature = "alloc")]
 extern crate alloc;
 
-use alloc::{format, string::String};
+#[cfg(feature = "alloc")]
+use alloc::format;
+
 use core::cmp;
 use core::time::Duration;
 
@@ -286,11 +306,12 @@ impl HLC {
     /// let ts = hlc1.new_timestamp();
     /// assert!(ts > other_ts);
     /// ```
-    pub fn update_with_timestamp(&self, timestamp: &Timestamp) -> Result<(), String> {
+    pub fn update_with_timestamp(&self, timestamp: &Timestamp) -> Result<(), &'static str> {
         let mut now = (self.clock)();
         now.0 &= LMASK;
         let msg_time = timestamp.get_time();
         if *msg_time > now && *msg_time - now > self.delta {
+            #[cfg(any(feature = "std", feature = "alloc"))]
             let err_msg = format!(
                 "incoming timestamp from {} exceeding delta {}ms is rejected: {:#} vs. now: {:#}",
                 timestamp.get_id(),
@@ -302,7 +323,7 @@ impl HLC {
             log::warn!("{}", err_msg);
             #[cfg(feature = "defmt")]
             defmt::warn!("{}", err_msg);
-            Err(err_msg)
+            Err("incoming timestamp exceeding delta is rejected (see logs for details)")
         } else {
             let mut last_time = lock!(self.last_time);
             let max_time = cmp::max(cmp::max(now, *msg_time), *last_time);
@@ -364,12 +385,9 @@ pub fn zero_clock() -> NTP64 {
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use async_std::sync::Arc;
-    use async_std::task;
-    use core::convert::TryFrom;
     use core::time::Duration;
-    use futures::join;
 
+    #[cfg(feature = "alloc")]
     fn is_sorted(vec: &[Timestamp]) -> bool {
         let mut it = vec.iter();
         let mut ts = it.next().unwrap();
@@ -382,9 +400,14 @@ mod tests {
         true
     }
 
+    #[cfg(feature = "alloc")]
     #[test]
     fn hlc_parallel() {
         use alloc::vec::Vec;
+        use async_std::sync::Arc;
+        use async_std::task;
+        use core::convert::TryFrom;
+        use futures::join;
         task::block_on(async {
             let id0: ID = ID::try_from([0x01]).unwrap();
             let id1: ID = ID::try_from([0x02]).unwrap();
